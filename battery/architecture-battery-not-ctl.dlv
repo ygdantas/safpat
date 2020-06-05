@@ -1,0 +1,57 @@
+% How to run:
+% ./dlv battery/architecture-battery-not-ctl.dlv safety.dlv
+
+% === Architecture ===
+% Components
+% bms -> Battery Management System
+% bat -> Battery
+% ci -> Charging interface
+% fw -> firewall
+cp(bms).
+cp(bat).
+cp(ci) .
+cp(fw).
+
+% Logical Channels 
+ch(ch1,bat,bms).
+%ch(ch2,bms,ci).
+ch(ch3,ci,bat).
+dep(ch20,can).
+ch(ch20,bms,fw).
+ch(ch21,fw,ci).
+
+% physical components
+  % - ECUs
+  % - comm mediums
+can(can).
+%dep(ch2,can).
+ecu(ecu).
+dep(bms,ecu).
+
+hw(bat).
+
+%%%% SAFETY %%%%
+hz(["hz",bat],bat,err,cat).
+hz(["hz",ci],ci,err,cat).
+hz(["hz",can],can,err,cat).
+hz(["hz",bms],bms,err,cat).
+hz(["hz",fw],fw,omission,cat).
+
+subHz(["hz",ci],["hz",bat]).
+subHz(["hz",can],["hz",ci]).
+subHz(["hz",bms],["hz",ci]).
+subHz(["hz",fw],["hz",ci]).
+
+
+ctl(["hz",can],can,err,cat).
+
+%% Information flow
+if(if1,[ch1,ch20,ch21,ch3]).
+before(ch1,ch20,if1).
+before(ch20,ch21,if1).
+before(ch21,ch3,if1).
+
+%% Uncomment for exploration
+explore(1,safMon) .
+explore(1,hdr).
+ :- nctl(H,Z,V,P).

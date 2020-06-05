@@ -1,0 +1,598 @@
+% === Safety ===
+
+% Software and Hardware
+% Hardware are either
+%   * can(ID) -> denoting a can bus
+%   * ecu(ID) -> denoting an ECU where SW is deployed
+%   * hw(ID) -> generic (unspecified hw), e.g., sensors.
+%   IDEA (if usefule): we could consider the hardware topology
+%     e.g., ecu1 <-- can -> ecu2, 
+%%    where ecu1 and ecu2 communicate using can
+
+% Software is any functional component deployed in an ECU.
+% (Used for some safety patterns, e.g., N-Programming)
+
+sw(CP) :- cp(CP),
+          dep(CP,ECU),
+          ecu(ECU).
+
+% Information Flow Relation:
+before(CH,CH,IF) :-
+      ch(CH,_,_),
+      if(IF,PATH),
+      #member(CH,PATH).
+
+before(CH1,CH2,IF) :- 
+      before(CH1,CH3,IF),
+      before(CH3,CH2,IF) .
+
+
+
+% Hazards
+% hz(id,cp,type,sev), where type can be:
+%    * err -> for erroneous
+%    * loss -> for loss of function
+%% and sev (for severity) can be 
+%%   * cat -> catastrophic
+%%   * haz -> hazardeous
+%%   * maj -> major
+%%   * min -> minimal
+
+%%% HARA
+nctl(H,CP,TYPE,SEV) :- basic(H,CP,TYPE,SEV),
+           not ctl(H,CP,TYPE,SEV) .
+
+basic(H,CP,TYPE,SEV) :- hz(H,CP,TYPE,SEV),
+            not has_subHz(H).
+            
+%%has_subHz(H,CP,TYPE,SEV) :- subHz(SH,SCP,STYPE,SSEV,H,CP,TYPE,SEV) .
+has_subHz(H) :- subHz(SH,H) .
+
+% derived hazards, i.e., have sub-hazards
+
+derived(H,CP,TYPE,SEV) :- hz(H,CP,TYPE,SEV),
+              not basic(H,CP,TYPE,SEV) .
+
+% A derived hazard is not controllable 
+% if it has a sub-hazard that is not controllable.
+nctl(H,CP,TYPE,SEV) :- hz(H,CP,TYPE,SEV),
+           derived(H,CP,TYPE,SEV),
+           hasNCTLSubHz(H,CP,TYPE,SEV).
+
+% Otherwise it is controllable.
+ctl(H,CP,TYPE,SEV) :- hz(H,CP,TYPE,SEV),
+          derived(H,CP,TYPE,SEV),
+          not hasNCTLSubHz(H,CP,TYPE,SEV) .
+
+% Exists a sub hazard that is not controllable
+hasNCTLSubHz(H,CP,TYPE,SEV) :- hz(H,CP,TYPE,SEV),
+%                   subHz(SH,SCP,STYPE,SSEV,H,CP,TYPE,SEV),
+                   subHz(SH,H),
+ %                  hz(SH,SCP,STYPE,SSEV),
+  %                 not ctl(SH,SCP,STYPE,SSEV) .
+                    nctl(SH, SCP, STYPE, SSEV).
+
+%% ========== HAZOP ===========
+%%% omission: Function not provided when expected
+%%% commission: Function provided when not expected
+%%% late: Function provided too late
+%%% early: Function provided too late
+%%% valHigh: Function provided value higher than expected
+%%% valLow: Function provided value lower than expected
+
+% ======== Safety patterns ========
+
+% ****** Safety Pattern: Monitor  ***********
+% safMon(id,cp,ic,oc,fs,min,mout,mcp), where
+%           
+%     --ic1------>cp --oc1------> 
+%     --icn------>  --ocm------> 
+%        |        ^             |
+%        |        |             |
+%        |        fs            |
+%        |        |             |
+%        -min1--> mcp <--mout1 --
+%        -minn-->     <--moutn --
+
+    % cp -> denotes the the corresponding component to which
+    %       the monitor is associated to
+    % ic,oc -> denote the input and output channels that are monitored
+    % ss -> denotes the output channel that transmits the shutdown signal
+    % min -> denotes the name of channel with the input channel to the mcp
+    % mout -> denotes the name of channel with the output channel to the mcp
+    % mcp -> denotes the monitor component
+
+cp(MCP) :- safMon(ID,CP,[IC],[OC],FS,[MIN],[MOUT],MCP), 
+		   explore(N,P).
+subcp(MCP,CP1) :- safMon(ID,CP,IC,OC,FS,[MIN],[MOUT],MCP),
+                  subcp(CP,CP1), 
+                  explore(N,safMon). 
+
+ch(FS,MCP,CP) :- safMon(ID,CP,[IC],[OC],FS,[MIN],[MOUT],MCP), 
+				 explore(N,safMon).
+
+ch(MIN,ECP,MCP) :- safMon(ID,CP,[IC],[OC],FS,[MIN],[MOUT],MCP),
+                   ch(IC,ECP,CP), 
+                   explore(N,safMon).
+
+%ch(MOUT,CP,MCP) :- safMon(ID,CP,IC,OC,FC,MIN,MOUT,MCP), explore(N,safMon).
+
+%cp(MCP) :- safMon(ID,CP,[IC],[OC],SS,MIN,MOUT,MCP), 
+%           explore(N,safMon).
+%subcp(MCP,CP1) :- safMon(ID,CP,[IC],[OC],SS,MIN,MOUT,MCP),
+%                  subcp(CP,CP1), explore(N,safMon). 
+
+%ch(SS,MCP,CP) :- safMon(ID,CP,[IC],[OC],SS,MIN,MOUT,MCP), 
+%				 explore(N,safMon).
+
+%ch(MIN,ECP,MCP) :- safMon(ID,CP,[IC],[OC],FC,MIN,MOUT,MCP),
+%                   ch(IC,ECP,CP), 
+%                   explore(N,safMon).
+
+%ch(MOUT,CP,MCP) :- safMon(ID,CP,[IC],[OC],FC,MIN,MOUT,MCP), 
+%                   explore(N,safMon).
+
+
+% Safety argumentation with patterns.
+ctl(ID,CP,err,SEV) :- hz(ID,CP,err,SEV), 
+           safMon(ID2,CP,_,_,_,_,_,_),
+           not inpNotCovSF(ID2),
+           not outNotCovSF(ID2) .           
+
+ctl(ID,CP,valHigh,SEV) :- hz(ID,CP,valHigh,SEV), 
+           safMon(ID2,CP,_,_,_,_,_,_),
+           not inpNotCovSF(ID2),
+           not outNotCovSF(ID2) .           
+
+ctl(ID,CP,valLow,SEV) :- hz(ID,CP,valLow,SEV), 
+           safMon(ID2,CP,_,_,_,_,_,_),
+           not inpNotCovSF(ID2),
+           not outNotCovSF(ID2).
+
+ctl(ID,CP,omission,SEV) :- hz(ID,CP,omission,SEV), 
+           safMon(ID2,CP,_,_,_,_,_,_),
+           not inpNotCovSF(ID2),
+           not outNotCovSF(ID2).
+
+
+isexploration :- explore(N,P) .
+
+inpNotCovSF(ID2) :- 
+       safMon(ID2,CP,ICHs,_,FS,_,_,_),
+       ch(CH,_,CP),
+       CH != FS,
+       not #member(CH,ICHs),
+       not isexploration .
+
+outNotCovSF(ID2) :- 
+       safMon(ID2,CP,_,OCHs,_,MIN,MOUT,_),
+       ch(CH,CP,_),
+       not #member(CH,MIN),
+       not #member(CH,MOUT),
+       not #member(CH,OCHs), 
+       not isexploration .
+
+% ****** Safety Pattern: Watchdog  ***********
+% watchDog(pat2,bms,scwd,chlvswd,wd).
+% watchDog(id,cp,scwd,chlvswd,wd), where
+
+%           --ic------> cp --oc----> 
+%              |       ^  |        |
+%              |       |  |        |
+%              |     scwd chlvswd   |
+%              |       |  |        |
+%                       wdcp
+
+
+    % cp -> denotes the corresponding component to which
+    %       the watchdog is associated to
+    % chscwd -> denotes the output channel that transmits the shutdown signal from the watchdog to cp
+    % chlvswd -> denotes the name of channel that transmit liveness messages to the wd 
+    % wdcp -> denotes the watchdog component
+
+
+%% VN: We need to instantiate P as watchDog. The same for the below.
+% Component 
+cp (WDCP) :- watchDog(ID,CP,CHSCWD,CHLVSWD,WDCP),
+			 explore(N,watchdog).
+%subcp(WD,CP1) :- watchDog(ID,CP,SCWD,chlvswd,WD),
+%                  subcp(CP,CP1). 
+
+% Logical Channels 
+% Output from CP to Watchdog
+ch(CHLVSWD,CP,WDCP) :- watchDog(ID,CP,FC,CHLVSWD,WDCP),
+					   explore(N,watchdog).
+
+%% Shutdown signal from watchdog to CP
+ch(CHSCWD,WDCP,CP) :- watchDog(ID,CP,CHSCWD,CHLVSWD,WDCP),
+					  explore(N,watchdog).
+
+% Safety argumentation with patterns.
+ctl(ID,CP,loss,SEV) :- hz(ID,CP,loss,SEV),
+           watchDog(ID2,CP,_,_,_).
+
+% ****** Safety Pattern: HDR -> N-OUT-OF-2 (MOON) with Fail Safe  ***********
+%% Before
+%%  sc1 --- ch1 --> [...] -> outc
+%%
+
+% Applied pattern:
+% sc1 --- chMoon1 ----\
+%                      -> voter -oCh--> outc
+% sc2 --- chMoon2 ----/
+
+%% Remark. Notice that if sc2 is taken from the path [...] (in the diagram above), 
+%% one is using a voter for additional path redundancy.
+
+    % sc1 -> component 1
+    % sc2 -> component 2
+    % chMoon1 -> channel1 that transmits input 1 to the voter
+    % chMoon2 -> channel2 that transmits input 2 to the voter
+    % vote -> voter component
+    % oCh -> channel trat transmits output to out component
+    % out -> output component
+
+% Components
+%% SC1 component for input 1
+%cp(SC1) :- moon2FSPat(ID,CH1,SC1,SC2,CHMOON1,CHMOON2,VOTERCP,CHOUT, OUTCP).
+%% SC2 component for input 2
+%cp(SC2) :- moon2FSPat(ID,CH1,SC1,SC2,CHMOON1,CHMOON2,VOTERCP,CHOUT, OUTCP).
+%% Voter component
+cp(VOTERCP) :- hdr(ID,SC1,CH1,SC2,CHMOON1,CHMOON2,VOTERCP,CHOUT, OUTCP),
+			   explore(N,hdr).
+
+%% remove(ch) denotes that the channel ch 
+%% shall no longer be considered.
+%% remove(cp) denotes that the component cp 
+%% shall no longer be considered.
+remove(CH1) :- hdr(ID,SC1,CH1,SC2,CHMOON1,CHMOON2,VOTERCP,CHOUT, OUTCP),
+		ch(CH1,_,_),
+		explore(N,hdr).
+
+
+% Logical Channels
+%% SC1 -> VOTERCP
+ch(CHMOON1,SC1,VOTERCP) :- hdr(ID,SC1,CH1,SC2,CHMOON1,CHMOON2,VOTERCP,CHOUT, OUTCP),
+						   explore(N,hdr).
+%% SC2 -> VOTERCP
+ch(CHMOON2,SC2,VOTERCP) :- hdr(ID,SC1,CH1,SC2,CHMOON1,CHMOON2,VOTERCP,CHOUT, OUTCP),
+						   explore(N,hdr).
+%% VOTERCP -> OUTCP
+ch(CHOUT,VOTERCP,OUTCP) :- hdr(ID,SC1,CH1,SC2,CHMOON1,CHMOON2,VOTERCP,CHOUT, OUTCP),
+						   explore(N,hdr).
+
+% Safety argumentation for MooN for redundant sensors 
+%%% Controlling by Hardware Redundancy
+ctl(ID,SC1,err,SEV) :- hz(ID,SC1,err,SEV),
+           hdr(ID3,_,_,_,_,_,VOTERCP,_,_),
+           not sw(SC1),
+           ch(_,SC1,VOTERCP).
+
+%%% Controlling by Path Redundancy
+%%%% Condition when CP2 may be the same component with an omission hazard
+%ctl(ID,CP,omission,SEV) :-
+%  hz(ID,CP,omission,SEV),
+ctl(ID,CP,omission,SEV) :-
+  hz(ID,CP,omission,SEV),  
+  cp(CP1),
+  cp(CP),
+  ch(CHOUT,CP1,_),
+  ch(CH,CP,_),
+  if(IF,PATH),
+  % output of cp1 is before or equal than the output from the cp with hazard    
+  before(CHOUT,CH,IF),
+  hdr(IDPAT,CP1,_,CP,_,_,_,_,_).
+
+%%% Controlling by Path Redundancy
+%%%% Condition when CP2 is not the same component with an omission hazard
+%ctl(ID,CP,omission,SEV) :-
+%  hz(ID,CP,omission,SEV),
+ctl(ID,CP,omission,SEV) :-
+  hz(ID,CP,omission,SEV),  
+  CP2 != CP,
+  cp(CP1),
+  cp(CP2),
+  ch(CHOUT,CP1,_),
+  ch(CHIN,_,CP2),
+  cp(CP),
+  ch(CH,CP,_),
+  if(IF,PATH),
+  % output of cp1 is before or equal than the output from the cp with hazard    
+  before(CHOUT,CH,IF),
+  % output of cp with hazard is before of equal the input of cp2
+  before(CH,CHIN,IF),
+  hdr(IDPAT,CP1,_,CP2,_,_,_,_,_).
+
+
+% ****** Safety Pattern: TMR -> N-OUT-OF-3 (MOON) with Fail Safe  ***********
+%% Before
+%%  sc1 --- ch1 --> [...] -> outc
+%%
+
+% Applied pattern:
+% sc1 --- chMoon1 ----\
+%                      \
+% sc2 --- chMoon2 ------> voter -oCh--> outc
+%                      /
+% sc3 --- chMoon3 ----/
+
+%% Remark. Notice that if sc2 is taken from the path [...] (in the diagram above), 
+%% one is using a voter for additional path redundancy.
+
+    % sc1 -> component 1
+    % sc2 -> component 2
+    % sc3 -> component 3    
+    % chMoon1 -> channel1 that transmits input 1 to the voter
+    % chMoon2 -> channel2 that transmits input 2 to the voter
+    % chMoon3 -> channel2 that transmits input 3 to the voter    
+    % vote -> voter component
+    % oCh -> channel trat transmits output to out component
+    % out -> output component
+
+%moon3SFPat(nuMoon3SF,ch1,ds,sc2,sc3,chmoon1,chmoon2,chmoon1,votercp,chout, accm) .
+
+% Components
+%% SC2 component for input 2
+cp(SC2) :- tmr(ID,SC1,CH1,SC2,SC3,CHMOON1,CHMOON2,CHMOON3,VOTERCP,CHOUT, OUTCP),
+	       explore(N,tmr). 
+hw(SC2) :- tmr(ID,SC1,CH1,SC2,SC3,CHMOON1,CHMOON2,CHMOON3,VOTERCP,CHOUT, OUTCP),
+		   explore(N,tmr).
+%% SC3 component for input 3
+cp(SC3) :- tmr(ID,SC1,CH1,SC2,SC3,CHMOON1,CHMOON2,CHMOON3,VOTERCP,CHOUT, OUTCP),
+           explore(N,tmr).
+hw(SC3) :- tmr(ID,SC1,CH1,SC2,SC3,CHMOON1,CHMOON2,CHMOON3,VOTERCP,CHOUT, OUTCP),
+		   explore(N,tmr).	
+%% Voter component
+cp(VOTERCP) :- tmr(ID,SC1,CH1,SC2,SC3,CHMOON1,CHMOON2,CHMOON3,VOTERCP,CHOUT, OUTCP),
+			   explore(N,tmr).
+%% remove(ch) denotes that the channel ch 
+%% shall no longer be considered.
+%% remove(cp) denotes that the component cp 
+%% shall no longer be considered.
+remove(CH1) :- tmr(ID,SC1,CH1,SC2,SC3,CHMOON1,CHMOON2,CHMOON3,VOTERCP,CHOUT, OUTCP),
+       ch(CH1,_,_),
+       explore(N,tmr).
+
+% Logical Channels
+%% SC1 -> VOTERCP
+ch(CHMOON1,SC1,VOTERCP) :- tmr(ID,SC1,CH1,SC2,SC3,CHMOON1,CHMOON2,CHMOON3,VOTERCP,CHOUT, OUTCP),
+						   explore(N,tmr).	
+%% SC2 -> VOTERCP
+ch(CHMOON2,SC2,VOTERCP) :- tmr(ID,SC1,CH1,SC2,SC3,CHMOON1,CHMOON2,CHMOON3,VOTERCP,CHOUT, OUTCP),
+						   explore(N,tmr).	
+%% SC3 -> VOTERCP
+ch(CHMOON3,SC3,VOTERCP) :- tmr(ID,SC1,CH1,SC2,SC3,CHMOON1,CHMOON2,CHMOON3,VOTERCP,CHOUT, OUTCP),
+						   explore(N,tmr).	
+%% VOTERCP -> OUTCP
+ch(CHOUT,VOTERCP,OUTCP) :- tmr(ID,SC1,CH1,SC2,SC3,CHMOON1,CHMOON2,CHMOON3,VOTERCP,CHOUT, OUTCP),
+						   explore(N,tmr).	
+
+%% Safety argumentation for MooN for redundant sensors 
+%ctl(ID,SC1,err,SEV) :- hz(ID,SC1,err,SEV),
+%           moon3FSPat(ID3,CH1,_,_,_,_,_,_,_,_,OutCP),
+%           ch(CH1,SC1,_).
+
+ctl(ID,SC1,err,SEV) :- hz(ID,SC1,err,SEV),
+           tmr(ID3,_,_,_,_,_,_,_,VOTERCP,_,OutCP),
+           ch(_,SC1,VOTERCP).           
+%           ch(CH,SC1,_).
+
+
+
+
+% ****** Safety Pattern: N-VERSION-PROGRAMMING  ***********
+%nProgrammingPat(id,v1,chOut1,chOut1,chNOut1,v2,chInp2,chOut2,voterNPcp,chNPOut,outcp)
+%% Before
+%  chInp1 --> v1 -> chOut1
+%
+
+% Applied pattern:
+%  chInp1 --> v1 --> chOut1 \  
+%                            \
+%                             --> voterNPcp --> chNPOut--> outcp
+%                            /
+%  chInp2 --> v2 -->  chOut2 /
+
+%% Remark. Notice that if sc2 is taken from the path [...] (in the diagram above), 
+%% one is using a voter for additional path redundancy.
+
+    % chInp1 -> denotes the channel that transmits the input1 to v1 (version 1)
+    % v1 -> denotes the version 1 component
+    % chOut1 -> denotes the channel that transmits the output from v1. This channel is removed
+    % so that a new channel is implemented to transmit the output to the voterNPcp
+    % chNOut1 -> denotes the new channel to transmit the output from v1 to the voterNPcp
+    % v2 -> denotes the version 2 component
+    % chInp2 -> denotes the channel that transmits the input1 to v2
+    % chOut2 -> denotes the channel that transmits the output from v2 to the voterNPcp
+    % voterNPcp -> denotes the voter component
+    % chNPOut -> denotes the channel that transmits the output from the voterNPcp to outcp
+    % outcp -> denotes the component that receives the output from the voterNPcp component
+
+% Components
+%nProgramming(ID,V1,[CHINP1],[CHOUT1],[CHNOUT1],V2,[CHINP2],[CHOUT2],[VOTERNPCP],[CHNPOUT],[OUTCP])
+%nProgramming(ID,V1,[CHINP1],[CHOUT1],V2,[VOTERNPCP],[CHNPOUT],[OUTCP])
+%% V2 (version 2) component 
+cp(V2) :- nProg(ID,V1,[CHINP1],[CHOUT1],V2,[VOTERNPCP],[CHNPOUT],[OUTCP]),
+          dep(V1,ECU),
+          explore(N,nProg).
+%% V2 (version 2) is implemented in software. 
+%dep(V2,ECU) :- nProgrammingPat(ID,V1,CHINP1,CP1,CHOUT1,CHNOUT1,V2,CHINP2,CHOUT2,VOTERNPCP,CHNPOUT,OUTCP).
+
+ %% Voter component
+cp(VOTERNPCP) :- nProg(ID,V1,[CHINP1],[CHOUT1],V2,[VOTERNPCP],[CHNPOUT],[OUTCP]),
+		         dep(V1,ECU),
+		         explore(N,nProg).
+
+%% remove(ch) denotes that the channel ch 
+%% shall no longer be considered.
+remove(CHOUT1) :- nProg(ID,V1,[CHINP1],[CHOUT1],V2,[VOTERNPCP],[CHNPOUT],[OUTCP]),
+		          dep(V1,ECU),
+        		  ch(CHOUT1,_,_),
+        		  explore(N,nProg).
+
+% Logical Channels
+%% CP1 -> V2
+%ch(CHINP2,CP,V2) :- nProg(ID,V1,CHINP1,CHOUT1,CHNOUT1,V2,CHINP2,CHOUT2,VOTERNPCP,CHNPOUT,OUTCP),
+%        			dep(V1,ECU), 
+%        			ch(CHINP1, CP, V1),
+%        			explore(N,nProg).
+%% V1 -> VOTERCP
+%ch(CHNOUT1,V1,VOTERNPCP) :- nProg(ID,V1,CHINP1,CHOUT1,CHNOUT1,V2,CHINP2,CHOUT2,VOTERNPCP,CHNPOUT,OUTCP),
+%					        dep(V1,ECU),
+%				        explore(N,nProg).
+%% V2 -> VOTER
+%ch(CHOUT2,V2,VOTERNPCP) :- nProg(ID,V1,CHINP1,CHOUT1,CHNOUT1,V2,CHINP2,CHOUT2,VOTERNPCP,CHNPOUT,OUTCP),
+%					       dep(V1,ECU),
+%					       explore(N,nProg).
+%% VOTER -> OUTPUT COMPONENT
+%ch(CHNPOUT,VOTERNPCP,OUTCP) :- nProg(ID,V1,CHINP1,CHOUT1,CHNOUT1,V2,CHINP2,CHOUT2,VOTERNPCP,CHNPOUT,OUTCP),
+%					           dep(V1,ECU),
+%					           explore(N,nProg).
+
+% Safety argumentation for MooN for redundant sensors 
+ctl(ID,V1,err,SEV) :- hz(ID,V1,err,SEV),
+           nProg(ID2,V1,_,_,_,_,_,_),
+          sw(V1),
+           not inpNotCovNP(ID2) .
+
+inpNotCovNP(ID2) :-
+       nProg(ID2,V1,ICHs,_,_,_,_,_), 
+       %safMon(ID2,CP,ICHs,_,SC,_,_,_),
+       ch(CH,_,V1),
+       %CH != SC,
+       not #member(CH,ICHs),
+       not isexploration .
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Exploration
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%% Monitor %%%%%%%
+basicOrNCTL(H,CP,TYPE,SEV) :- nctl(H,CP,TYPE,SEV). 
+basicOrNCTL(H,CP,TYPE,SEV) :- basic(H,CP,TYPE,SEV). 
+
+% safMon for err
+safMon(nuSafMon,CP,allInputs,allOutputs,nuSC,numin,numout,numcp) 
+v 
+nsafMon(nuSafMon,CP,allInputs,allOutputs,nuSC,numin,numout,numcp) 
+ :- cp(CP),
+    hz(IDHZ,CP,err,SEV),
+    basicOrNCTL(IDHZ,CP,err,SEV),
+    explore(N,safMon) .
+
+% safMon for omission
+safMon(nuSafMon,CP,allInputs,allOutputs,nuSC,numin,numout,numcp) 
+v 
+nsafMon(nuSafMon,CP,allInputs,allOutputs,nuSC,numin,numout,numcp) 
+ :- cp(CP),
+    hz(IDHZ,CP,omission,SEV),
+    basicOrNCTL(IDHZ,CP,omission,SEV),
+    explore(N,safMon) .
+    
+:- #count{CP : safMon(nuSafMon,CP,_,_,_,_,_,_)} > N, explore(N,safMon) .
+
+%%%%%%% N-OUT-OF-2 Moon with fail safe (part 1) %%%%%%%
+%% Reasoning is imcomplete as it assumes that 
+%% CP2 is the direct incomming channel, while in general we could use previous channel in the information flow.
+hdr(nuHDR,CP1,CH1,CP2,nuchm1,nuchm2,nuvtcp,nucho,CPO)
+v 
+nhdr(nuHDR,CP1,CH1,CP2,nuchm1,nuchm2,nuvtcp,nucho,CPO)
+  :- hz(ID,CP,omission,SEV),
+     CP2 != CP,
+     cp(CP1),
+     cp(CP2),
+     ch(CHOUT,CP1,_),
+     ch(CHIN,_,CP2),
+     cp(CP),
+     ch(CH,CP,_),
+     if(IF,PATH),
+     before(CHOUT,CHIN,IF),
+  %% % output of cp1 is before or equal than the output from the cp with hazard    
+     before(CHOUT,CH,IF),
+  %% % output of cp with hazard is before of equal the input of cp2
+     before(CH,CHIN,IF),
+     ch(CH1,_,CPO),
+     % output of cp1 is before than ch1
+     before(CHIN,CH1,IF),
+     CP1 != CP, %% TODO: TO BE DISCUSSED
+     CP1 != CP2,
+     CP1 != CPO,
+     CP2 != CPO,  
+     explore(N,hdr) .
+
+%%%%%%% N-OUT-OF-2 Moon with fail safe (part 2) %%%%%%%
+%% Reasoning is imcomplete as it assumes that 
+%% CP2 is the direct incomming channel, while in general we could use previous channel in the information flow.
+hdr(nuHDR,CP1,CH1,CP2,nuchm1,nuchm2,nuvtcp,nucho,CPO)
+v 
+nhdr(nuHDR,CP1,CH1,CP2,nuchm1,nuchm2,nuvtcp,nucho,CPO)
+  :- hz(ID,CP,omission,SEV),
+     cp(CP1),
+     cp(CP2),
+     ch(CHOUT,CP1,_),
+     ch(CHIN,_,CP2),
+     cp(CP),
+     ch(CH,CP,_),
+     if(IF,PATH),
+     before(CHOUT,CHIN,IF),     
+  %% % output of cp1 is before or equal than the output from the cp with hazard    
+     before(CHOUT,CH,IF),
+     ch(CH1,_,CPO),
+     before(CHIN, CH1,IF),
+ %    #member(CH1,PATH),
+     CP1 != CP, %% TODO: TO BE DISCUSSED
+     CP1 != CP2,
+     CP1 != CPO,
+     CP2 != CPO,  
+     explore(N,hdr) .
+
+:- #count{CP1,CH1,CP2 : hdr(nuHDR,CP1,CH1,CP2,_,_,_,_,_)} > N,
+explore(N,hdr) . 
+
+%%%%%%% N-OUT-OF-3 Moon with fail safe %%%%%%%
+tmr(nuTMR,CP1,CH1,nucp2,nucp3,nuchm1,nuchm2,nuchm3,nuvtcp,nucho,nucpo)
+v 
+tmr(nuTMR,CP1,CH1,nucp2,nucp3,nuchm1,nuchm2,nuchm3,nuvtcp,nucho,nucpo)
+ 	:-  cp(CP1),
+    	not sw(CP1), %  only for hw components?
+    	hz(HZ0,CP1,err,SEV),
+    	ch(CH1,CP1, _),
+      CH1 != nuchm1,
+      CH1 != nuchm2,
+      CH1 != nuchm3,   
+    	explore(N,tmr) .
+
+:- #count{CP1,CHI : tmr(nuTMR,CP1,CHI,_,_,_,_,_,_,_,_)} > N, explore(N,tmr) .
+
+
+%%%%%%% N Programming %%%%%%%
+nProg(nuNProg, V1, chInp1, chOut1, v2, voterNPcp, chNPOut, output)
+v
+nnProg(nuNProg, V1, chInp1, chOut1, v2, voterNPcp, chNPOut, output)
+		:- cp(V1),
+		  hz(HZ,V1,err,SEV),
+%		  ch(CHINP1,_,V1),
+%		  ch(CHOUT1,V1,_),
+		  sw(V1),
+		  V1 != v2,
+		  V1 != voterNPcp,
+		  V1 != output,
+		  explore(N,nProg) .  	
+
+:- #count{V1 : nProg(nuNProg,V1,_,_,_,_,_,_)} > N,
+   explore(N,nProg) .		  
+
+%%%%%%% WatchDog %%%%%%%
+watchDog(nuWD,CP,nuscwd,nulvwd,nuwd)
+v
+nwatchDog(nuWD,CP,nuscwd,nulvwd,nuwd)
+	:- cp(CP),
+	   hz(HZ,CP,loss,SEV),
+%	   ch(_,CP,_),
+       CP != nuwd,
+       explore(N,watchDog) .
+
+
+:- #count{CP : watchDog(nuWD,CP,_,_,_)} > N, explore(N,watchDog) .       

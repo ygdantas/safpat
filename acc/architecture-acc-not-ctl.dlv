@@ -1,0 +1,78 @@
+% How to run:
+% ./dlv acc/architecture-acc-not-ctl.dlv safety.dlv 
+
+% === Architecture ===
+% Components
+% acc -> Adaptive Cruise Control
+% accm -> Adaptive Cruise Control Management
+% ds -> Distance Sensor
+% bs -> Braking System
+% vs -> Velocity Sensor
+% bs -> Brake System
+% ps -> Powertrain System
+cp(acc). 
+cp(accm).
+cp(ds).
+cp(vs). 
+cp(bs).
+cp(ps).
+
+% Subcomponents
+% accsw is a subcomponent of acc
+subcp(accm,acc) .
+% ds is a subcomponent of acc
+subcp(ds,acc) .
+% vs is a subcomponent of acc
+subcp(vs,acc) .
+
+% Logical Channels 
+%ch(ch1,ds,accm).
+ch(dsaccm,ds,accm).
+
+ch(vsaccm,vs,accm).
+
+%ch(ch2,accm,bc).
+ch(accmbs,accm,bs).
+
+%ch(chaccmbc,accm,bc).
+ch(accmps,accm,ps).
+
+
+ecu(ecu).
+% accsw is implemented in software
+dep(accm,ecu).
+% bs is a implementation in hardware
+hw(ps).
+% bs is a implementation in hardware
+hw(bs).
+% ds is a implementation in hardware
+hw(ds).
+% vs is a implementation in hardware
+hw(vs).
+
+%%%% Hazards %%%%
+hz(["hz",accEr],acc,err,cat).
+hz(["hz",accLs],acc,loss,cat).
+hz(["hz",accm],accm,err,cat).
+hz(["hz",ds],ds,err,cat).
+hz(["hz",vs],vs,err,cat).
+
+%subHz(["hz",accm],accm,err,cat,["hz",acc],acc,err,cat).
+%subHz(["hz",ds],ds,err,cat,["hz",acc],acc,err,cat).
+%subHz(["hz",vs],vs,err,cat,["hz",acc],acc,err,cat).
+
+subHz(["hz",accm],["hz",accEr]).
+subHz(["hz",ds],["hz",accEr]).
+subHz(["hz",vs],["hz",accEr]).
+
+
+%% Information flow
+if(if1,[vsaccm,accmbs]). 
+if(if2,[dsaccm,accmbs]).
+
+%% Uncomment for exploration
+ explore(1,safMon) .
+ explore(2,tmr) .
+ explore(1,watchDog) .
+ :- nctl(H,Z,V,P).
+ explore(1,nProg) .

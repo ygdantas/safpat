@@ -1,0 +1,130 @@
+% How to run:
+% ./dlv acc/architecture-acc-ctl-nprog.dlv safety.dlv
+
+% === Architecture ===
+% Components
+% acc -> Adaptive Cruise Control
+% accm -> Adaptive Cruise Control Management
+% ds -> Distance Sensor
+% bs -> Braking System
+% vs -> Velocity Sensor
+% bs -> Brake System
+% ps -> Powertrain System
+cp(acc). 
+cp(accm).
+cp(ds).
+cp(vs). 
+cp(bs).
+cp(ps).
+
+% Subcomponents
+% accsw is a subcomponent of acc
+subcp(accsw,acc) .
+% ds is a subcomponent of acc
+subcp(ds,acc) .
+% vs is a subcomponent of acc
+subcp(vs,acc) .
+
+% Logical Channels 
+%% uncomment if tmr is disabled, comment out otherwise
+% ch(dsaccm,ds,accm). 
+
+% uncomment if tmr is disabled, comment out otherwise
+%% ch(vsaccm,vs,accm).
+
+% uncomment if nprogramming is disabled, comment out otherwise
+%ch(accmbs,accm,bs).
+% uncomment if nprogramming is disabled, comment out otherwise
+%ch(accmps,accm,ps).
+
+% physical components
+  % - ECUs
+  % - comm mediums
+
+ecu(ecu).
+% accsw is implemented in software
+dep(accm,ecu).
+% bs is a implementation in hardware
+hw(ps).
+% bs is a implementation in hardware
+hw(bs).
+% ds is a implementation in hardware
+hw(ds).
+% vs is a implementation in hardware
+hw(vs).
+
+
+%%%% Hazards %%%%
+hz(["hz",accEr],acc,err,cat).
+hz(["hz",accLs],acc,loss,cat).
+hz(["hz",accm],accm,err,cat).
+hz(["hz",ds],ds,err,cat).
+hz(["hz",vs],vs,err,cat).
+
+subHz(["hz",accm],["hz",accEr]).
+subHz(["hz",ds],["hz",accEr]).
+subHz(["hz",vs],["hz",accEr]).
+
+
+%%% Pattern - TMR
+%% instantiation for ds
+cp(cp21).
+hw(cp21).
+cp(cp31).
+hw(cp31).
+cp(votercp1).
+ch(moon11,ds,votercp1).
+ch(moon21,cp21,votercp1).
+ch(moon31,cp31,votercp1). 
+ch(vtout1,votercp1,accm).
+tmr(moon3FS1,ds,dsaccm,cp21,cp31,moon11,moon21,moon31,votercp1,vtout1,accm).
+
+%% instantiation for vs
+cp(cp22).
+hw(cp22).
+cp(cp32).
+hw(cp32).
+cp(votercp2).
+ch(moon12,vs,votercp2).
+ch(moon22,cp22,votercp2).
+ch(moon32,cp32,votercp2). 
+ch(vtout2,votercp2,accm).
+tmr(moon3FS2,vs,vsaccm,cp22,cp32,moon12,moon22,moon32,votercp2,vtout2,accm).
+
+
+%%% Pattern - Watchdog
+cp(wd).
+ch(lvwd,acc,wd).
+ch(sswd,wd,acc).
+watchDog(watchdog,acc,sswd,lvwd,wd).
+
+
+%%% Pattern - N Programming
+cp(v2). % denotes version 2 component
+cp(voternp1). % denotes the 1-out-of-2-voter for bs
+cp(voternp2). % denotes the 1-out-of-2-voter for ps
+%% uncomment if tmr is disabled, comment out otherwise
+% ch(inp11,ds,v2).
+%% uncomment if tmr is enabled, comment out otherwise
+ch(inp11,votercp1,v2). % denotes the channel for inputs from votercp1 (moon3FS1) to v2
+%% uncomment if tmr is disabled, comment out otherwise
+% ch(inp12,vs,v2),
+%% uncomment if tmr is enabled, comment out otherwise
+ch(inp12,votercp2,v2). % denotes the channel for inputs from votercp2 (moon3FS2) to v2
+
+ch(outv11,accm,voternp1). % denotes the channel for outputs from accm to to voternp1, outputs for bs
+ch(outv12,accm,voternp2). % denotes the channel for outputs from accm to to voternp2, outputs for ps
+
+ch(outv21,v2,voternp1). % denotes the channel for outputs from v2 to to voternp1, outputs for bs
+ch(outv22,v2,voternp2). % denotes the channel for outputs from v2 to to voternp2, outputs for ps
+
+ch(vtnpout1,voternp1,bs). % denotes channel for outputs from the voternp1 to bs
+ch(vtnpout2,voternp2,ps). % denotes channel for outputs from the voternp1 to ps
+%% uncomment if tmr is disabled, comment out otherwise
+% nProgramming(nProgramming,accm,[dsaccm,vsaccm],[accmbs,accmps],[outv11,outv12],v2,[inp11,inp12],[outv21,outv22],[voternp1,voternp2],[vtnpout1,vtnpout2],[bs,ps]).
+%nProgramming(nProgramming,accm,[vtout1,vtout2],[accmbs,accmps],[outv11,outv12],v2,[inp11,inp12],[outv21,outv22],[voternp1,voternp2],[vtnpout1,vtnpout2],[bs,ps]).
+nProg(nProgramming,accm,[vtout1,vtout2],[accmbs,accmps],v2,[voternp1,voternp2],[vtnpout1,vtnpout2],[bs,ps]).
+
+%% Information flow
+%if(if1,[vsaccm,accmbs]). 
+%if(if2,[dsaccm,accmbs]).

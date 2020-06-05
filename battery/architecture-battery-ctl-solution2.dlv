@@ -1,0 +1,94 @@
+% run dlv paper-example.dlv
+
+% === Architecture ===
+% Components
+% bms -> Battery Management System
+% bat -> Battery
+% ci -> Charging interface
+% fw -> Firewall
+cp(bms).
+cp(bat).
+cp(ci) .
+cp(fw).
+
+
+
+
+% Logical Channels 
+ch(ch1,bat,bms).
+%% uncomment if 2Moon Option 2 is enabled, comment out otherwise (Option 1 is enabled instead)
+ch(ch3,ci,bat).
+dep(ch20,can).
+ch(ch20,bms,fw).
+%% uncomment if 2Moon Option 2 is disabled, comment out otherwise (Option 1 is enabled instead)
+ch(ch21,fw,ci).
+
+
+% physical components
+  % - ECUs
+  % - comm mediums
+can(can).
+%dep(ch2,can).
+ecu(ecu).
+dep(bms,ecu).
+hw(bat).
+
+
+%%%% SAFETY %%%%
+%% hz(["hz",bat],bat,err,cat).
+hz(["hz",bat],bat,err,cat).
+hz(["hz",ci],ci,err,cat).
+hz(["hz",can],can,err,cat).
+hz(["hz",bms],bms,err,cat).
+hz(["hz",fw],fw,omission,cat).
+
+subHz(["hz",ci],["hz",bat]).
+subHz(["hz",can],["hz",ci]).
+subHz(["hz",bms],["hz",ci]).
+subHz(["hz",fw],["hz",ci]).
+
+ctl(["hz",can],can,err,cat).
+
+
+%%% PATTERN - HDR
+%% Option 1
+%ch(moon1,bms,voterdm).
+%ch(moon2,ci,voterdm).
+%ch(vtoutdm,voterdm,bat).
+%hdr(dmoon,bms,ch3,ci,moon1,moon2,voterdm,vtoutdm,bat).
+
+% Option 2
+ch(moon1,bms,voterdm).
+ch(moon2,fw,voterdm).
+ch(vtoutdm,voterdm,ci).
+hdr(dmoon,bms,ch21,fw,moon1,moon2,voterdm,vtoutdm,ci).
+
+%%% PATTERN - Monitor
+cp(mcp).
+subcp(mcp,bms).
+ch(min,bat,mcp).
+ch(mout,bms,mcp).
+ch(fs,mcp,bms).
+safMon(monitor,bms,[ch1],[ch20,moon1],fs,[min],[mout],mcp).
+
+%%%% SECURITY %%%
+%% public(CP), where CP is public component that may be accessible by an attacker
+public(ci).
+
+%% Information flow
+%% After firewall.
+%% missing new channels for the firewall
+%if(if1,[ch1,ch20,ch21,ch3]).
+%before(ch1,ch20,if1).
+%before(ch20,ch21,if1).
+%before(ch21,ch3,if1).
+
+if(if1,[ch1,min,mout,fs,moon2,ch20,moon1,ch21,ch3]).
+before(ch1,min,if1).
+before(mout,fs,if1).
+before(mout,moon2,if1).
+before(moon2,ch20,if1).
+before(moon1,ch21,if1).
+before(ch21,ch3,if1).
+
+
