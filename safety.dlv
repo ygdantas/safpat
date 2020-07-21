@@ -51,7 +51,9 @@ has_subHz(H) :- subHz(SH,H) .
 % derived hazards, i.e., have sub-hazards
 
 derived(H,CP,TYPE,SEV) :- hz(H,CP,TYPE,SEV),
-              not basic(H,CP,TYPE,SEV) .
+                has_subHz(H) .
+%               subHz(SH,H). 
+%              not basic(H,CP,TYPE,SEV) .
 
 % A derived hazard is not controllable 
 % if it has a sub-hazard that is not controllable.

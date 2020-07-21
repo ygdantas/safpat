@@ -54,4 +54,4 @@ before(ch21,ch3,if1).
 %% Uncomment for exploration
 explore(1,safMon) .
 explore(1,hdr).
- :- nctl(H,Z,V,P).
+%% :- nctl(H,Z,V,P).
